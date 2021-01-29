@@ -2,7 +2,7 @@
 
 import torch
 from torch_geometric.data import DataLoader
-from DEAPDataset import DEAPDataset, plot_graph
+from DEAPDataset import DEAPDataset
 from GNNModel import GNN
 
 ROOT_DIR = './'
@@ -13,13 +13,10 @@ dataset = DEAPDataset(root= ROOT_DIR, raw_dir= RAW_DIR, processed_dir=PROCESSED_
 
 train_dataset = dataset[0:30]
 val_dataset = dataset[30:35]
-test_dataset = dataset[35:40]
 
-
-BATCH_SIZE = 32
+BATCH_SIZE = 2
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE)
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
-test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE)
 
 EPOCH_N = 100
 
