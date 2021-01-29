@@ -17,6 +17,18 @@ def plot_graph(graph_data):
     nx.draw(graph, cmap=plt.get_cmap('Set1'),node_size=75,linewidths=6)
     plt.show()
 
+def describe_graph(graph_data):
+  print(data)
+  print('==============================================================')
+
+  # Gather some statistics about the graph.
+  print(f'Number of nodes: {data.num_nodes}')
+  print(f'Number of edges: {data.num_edges}')
+  print(f'Average node degree: {data.num_edges / data.num_nodes:.2f}')
+  print(f'Contains isolated nodes: {data.contains_isolated_nodes()}')
+  print(f'Contains self-loops: {data.contains_self_loops()}')
+  print(f'Is undirected: {data.is_undirected()}')
+
 class DEAPDataset(InMemoryDataset):
   # 1 participant per dataset
   # Theoretically it doesn't make sense to train for all participants -> unless aiming for subject-independent classification (not atm)
