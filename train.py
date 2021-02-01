@@ -19,7 +19,7 @@ BATCH_SIZE = 4
 train_loader = DataLoader(train_set, batch_size=BATCH_SIZE)
 val_loader = DataLoader(val_set, batch_size=BATCH_SIZE)
 
-EPOCH_N = 50
+MAX_EPOCH_N = 1000
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f'Device: {device}')
@@ -35,24 +35,28 @@ models = [GNN(in_channels,hidden_channels=64, target=target).to(device) for targ
 # Instantiate optimizers
 optimizers = [torch.optim.Adam(model.parameters()) for model in models]
 
-for epoch in range(EPOCH_N):
+for epoch in range(MAX_EPOCH_N):
   # Train epoch for every model
   t_e_losses = [model.train_epoch(train_loader,optimizers[i],criterion,device) for i,model in enumerate(models)]
-
   # Validation epoch for every model
-  v_e_losses = [model.eval_model(val_loader,device,epoch,save_best = True) for model in models]
+  v_e_losses = [model.eval_model(val_loader,device,epoch,model_is_training = True, early_stopping_patience=20) for model in models]
+
+  # Break if all models finished training
+  if t_e_losses.count(-1) == len(t_e_losses):
+    break
 
   # Epoch results
   print(f'------ Epoch {epoch} ------ \n')
   for i,target in enumerate(targets):
-    print(f'{target}: Train loss: {t_e_losses[i]:.2f} | Validation mse: {v_e_losses[i][0]:.2f}')
+    if t_e_losses[i] != -1:
+      print(f'{target}: Train loss: {t_e_losses[i]:.2f} | Validation mse: {v_e_losses[i][0]:.2f}')
 
 # Picking best performing model on validation
 for i in range(4):
   models[i].load_state_dict(torch.load(f'./best_params_{i}'))
 
 # Evaluating best models
-final_eval = [model.eval_model(val_loader,device) for model in models]
+final_eval = [model.eval_model(val_loader,device,model_is_training = False) for model in models]
 print(f'------ Final model eval ------ \n')
 for i,target in enumerate(targets):
   print(f'{target} (epoch {models[i].best_epoch}): Validation mse: {final_eval[i][0]:.2f}')
@@ -68,4 +72,4 @@ for i,target in enumerate(targets):
   plt.xlabel('epoch')
   plt.legend(['train', 'val'], loc='upper right')
   # models[i].load_state_dict(torch.load(f'./best_params_{i}'))
-plt.savefig('train_results_a.png')
+plt.savefig('train_losses.png')

@@ -16,6 +16,8 @@ class GNN(torch.nn.Module):
     self.best_epoch = 0
     self.train_losses = []
     self.eval_losses = []
+    self.eval_patience_count = 0
+    self.eval_patience_reached = False
 
   def forward(self, x, edge_index, batch,edge_attr):
     x = self.conv1(x, edge_index,edge_attr)
@@ -37,6 +39,8 @@ class GNN(torch.nn.Module):
     return x
 
   def train_epoch(self,loader,optim,criterion,device):
+    if self.eval_patience_reached:
+      return -1
     self.train()
     epoch_losses = []
     for batch in loader:
@@ -62,7 +66,9 @@ class GNN(torch.nn.Module):
     self.train_losses.append(epoch_mean_loss)
     return epoch_mean_loss
 
-  def eval_model(self,loader,device,epoch=-1, save_best = False):
+  def eval_model(self,loader,device,epoch=-1, model_is_training = False, early_stopping_patience = None):
+    if self.eval_patience_reached and model_is_training:
+      return -1,-1
     self.eval()
     mses = []
     l1s = []
@@ -72,12 +78,20 @@ class GNN(torch.nn.Module):
       target = batch.y.T[self.target].unsqueeze(1)
       mses.append(F.mse_loss(out,target).item())
       l1s.append(F.l1_loss(out,target).item())
-
     e_mse, e_l1 = np.array(mses).mean(), np.array(l1s).mean()
-    self.eval_losses.append(e_mse)
-    # and abs(t_e_loss - v_e_mse) < 5
-    if e_mse < self.best_val_mse :
-      self.best_val_mse = e_mse
-      self.best_epoch = epoch
-      torch.save(self.state_dict(),f'./best_params_{self.target}')
+
+    if model_is_training:
+      self.eval_losses.append(e_mse)
+      # Save current best model locally
+      if e_mse < self.best_val_mse:
+        self.best_val_mse = e_mse
+        self.best_epoch = epoch
+        torch.save(self.state_dict(),f'./best_params_{self.target}')
+        self.eval_best_count = 0
+      # Early stopping
+      elif early_stopping_patience is not None:
+          self.eval_patience_count += 1
+          if self.eval_patience_count >= early_stopping_patience:
+            self.eval_patience_reached = True
+
     return e_mse, e_l1
