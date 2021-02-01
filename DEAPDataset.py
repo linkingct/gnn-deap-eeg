@@ -2,10 +2,26 @@ import os
 import torch
 import scipy
 import numpy as np
+import itertools
 from torch_geometric.data import InMemoryDataset, Data, DataLoader
 from tqdm import tqdm
 from Electrodes import Electrodes
 
+
+# Get 30 videos for each participant for test, 5 for validation and 5 for testing
+def train_val_test_split(dataset):
+  train_mask = np.append(np.repeat(1,30),np.repeat(0,10))
+  train_mask = np.tile(train_mask,int(len(dataset)/40))
+  val_mask = np.append(np.append(np.repeat(0,30),np.repeat(1,5)),np.repeat(0,5))
+  val_mask = np.tile(val_mask,int(len(dataset)/40))
+  test_mask = np.append(np.repeat(0,35),np.repeat(1,5))
+  test_mask = np.tile(test_mask,int(len(dataset)/40))
+
+  train_set = [c for c in itertools.compress(dataset,train_mask)]
+  val_set = [c for c in itertools.compress(dataset,val_mask)]
+  test_set = [c for c in itertools.compress(dataset,test_mask)]
+
+  return train_set, val_set, test_set
 
 def plot_graph(graph_data):
     import networkx as nx
@@ -33,11 +49,11 @@ class DEAPDataset(InMemoryDataset):
   # 1 participant per dataset
   # Theoretically it doesn't make sense to train for all participants -> unless aiming for subject-independent classification (not atm)
   # PyG represents graphs sparsely, which refers to only holding the coordinates/values for which entries in  A  are non-zero.
-  def __init__(self, root, raw_dir,processed_dir,participant = 0, include_edge_attr=True, undirected_graphs = True, transform=None, pre_transform=None):
+  def __init__(self, root, raw_dir,processed_dir,participant_from,participant_to=None, include_edge_attr=True, undirected_graphs = True, transform=None, pre_transform=None):
       self._raw_dir = raw_dir
       self._processed_dir = processed_dir
-      self.participant_from = participant
-      self.participant_to = participant + 1
+      self.participant_from = participant_from
+      self.participant_to = participant_from if participant_to is None else participant_to
       # Whether or not to include edge_attr in the dataset
       self.include_edge_attr = include_edge_attr
       # If true there will be 1024 links as opposed to 528
@@ -65,7 +81,7 @@ class DEAPDataset(InMemoryDataset):
   def processed_file_names(self):
       if not os.path.exists(self.processed_dir):
         os.makedirs(self.processed_dir)
-      return [f'deap_processed_graph.{self.participant_from}.dataset']
+      return [f'deap_processed_graph.{self.participant_from}-{self.participant_to}.dataset']
 
   def process(self):
       # Number of nodes per graph
@@ -85,19 +101,19 @@ class DEAPDataset(InMemoryDataset):
 
       # List of graphs that will be written to file
       data_list = []
-      pbar = tqdm(self.raw_file_names)
-      for i,raw_name in enumerate(pbar):
-        if i in range(self.participant_from, self.participant_to):
-          pbar.set_description(raw_name)
-          # Load raw file as np array
-          participant_data = scipy.io.loadmat(f'{self.raw_dir}/{raw_name}')
-          signal_data = torch.LongTensor(participant_data['data'][:,:32,:])
-          labels = torch.Tensor(participant_data['labels'])
-          # Enumerate videos / graphs -> 1 graph per video
-          for index_video,node_features in enumerate(signal_data):
-            # Create graph
-            y = torch.FloatTensor(labels[index_video]).unsqueeze(0)
-            data = Data(x=node_features,edge_attr=edge_attr,edge_index=edge_index, y=y) if self.include_edge_attr else Data(x=node_features, edge_index=edge_index, y=y)
-            data_list.append(data)
+      pbar = tqdm(range(self.participant_from,self.participant_to+1))
+      for participant_id in pbar:
+        raw_name = [e for e in self.raw_file_names if str(participant_id).zfill(2) in e][0]
+        pbar.set_description(raw_name)
+        # Load raw file as np array
+        participant_data = scipy.io.loadmat(f'{self.raw_dir}/{raw_name}')
+        signal_data = torch.LongTensor(participant_data['data'][:,:32,:])
+        labels = torch.Tensor(participant_data['labels'])
+        # Enumerate videos / graphs -> 1 graph per video
+        for index_video,node_features in enumerate(signal_data):
+          # Create graph
+          y = torch.FloatTensor(labels[index_video]).unsqueeze(0)
+          data = Data(x=node_features,edge_attr=edge_attr,edge_index=edge_index, y=y) if self.include_edge_attr else Data(x=node_features, edge_index=edge_index, y=y)
+          data_list.append(data)   
       data, slices = self.collate(data_list)
       torch.save((data, slices), self.processed_paths[0])

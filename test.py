@@ -6,24 +6,28 @@ import torch.nn.functional as F
 from GNNModel import GNN
 from DEAPDataset import DEAPDataset
 from torch_geometric.data import DataLoader
+import itertools
+
 np.set_printoptions(precision=2)
 
 ROOT_DIR = './'
 RAW_DIR = 'data/matlabPREPROCESSED'
 PROCESSED_DIR = 'data/graphProcessedData'
 
-dataset = DEAPDataset(root= ROOT_DIR, raw_dir= RAW_DIR, processed_dir=PROCESSED_DIR, participant=0)
-test_dataset = dataset[35:40]
-test_loader = DataLoader(test_dataset, batch_size=8)
+dataset = DEAPDataset(root= ROOT_DIR, raw_dir= RAW_DIR, processed_dir=PROCESSED_DIR, participant_from=1, participant_to=32)
 
-in_channels = test_dataset.num_node_features
+_, _, test_set = train_val_test_split(dataset)
+
+test_loader = DataLoader(test_set, batch_size=8)
+
+in_channels = test_set[0].num_node_features
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f'Device: {device}')
 
 # Instantiate models
 targets = ['valence','arousal','dominance','liking']
-models = [GNN(in_channels,hidden_channels=64, target=target).to(device) for target in targets]
+models = [GNN(in_channels,hidden_channels=64, target=target).to(device).eval() for target in targets]
 
 # Load best performing params on validation
 for i in range(4):
@@ -38,5 +42,7 @@ for batch in test_loader:
   print('-Ground truth-')
   print(batch.y.cpu().detach().numpy(),'\n')
 
-  mse = F.mse_loss(predictions,batch.y)
-  print(f'Mean squared error: {mse.item()}')
+
+
+  print(f'Mean average error: {F.l1_loss(predictions,batch.y).item()}')
+  print(f'Mean squared error: {F.mse_loss(predictions,batch.y).item()}')

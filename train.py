@@ -2,21 +2,21 @@
 
 import torch
 from torch_geometric.data import DataLoader
-from DEAPDataset import DEAPDataset
+from DEAPDataset import DEAPDataset, train_val_test_split
 from GNNModel import GNN
+
 
 ROOT_DIR = './'
 RAW_DIR = 'data/matlabPREPROCESSED'
 PROCESSED_DIR = 'data/graphProcessedData'
 
-dataset = DEAPDataset(root= ROOT_DIR, raw_dir= RAW_DIR, processed_dir=PROCESSED_DIR, participant=0)
+dataset = DEAPDataset(root= ROOT_DIR, raw_dir= RAW_DIR, processed_dir=PROCESSED_DIR, participant_from=1, participant_to=32)
 
-train_dataset = dataset[0:30]
-val_dataset = dataset[30:35]
+train_set, val_set, _ = train_val_test_split(dataset)
 
-BATCH_SIZE = 2
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE)
-val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
+BATCH_SIZE = 8
+train_loader = DataLoader(train_set, batch_size=BATCH_SIZE)
+val_loader = DataLoader(val_set, batch_size=BATCH_SIZE)
 
 EPOCH_N = 100
 
@@ -27,7 +27,7 @@ print(f'Device: {device}')
 criterion = torch.nn.MSELoss()
 
 # Instantiate models
-in_channels = train_dataset.num_node_features
+in_channels = train_set[0].num_node_features
 targets = ['valence','arousal','dominance','liking']
 models = [GNN(in_channels,hidden_channels=64, target=target).to(device) for target in targets]
 
