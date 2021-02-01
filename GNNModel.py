@@ -14,6 +14,8 @@ class GNN(torch.nn.Module):
     self.target = {'valence':0,'arousal':1,'dominance':2,'liking':3}[target]
     self.best_val_mse = float('inf')
     self.best_epoch = 0
+    self.train_losses = []
+    self.eval_losses = []
 
   def forward(self, x, edge_index, batch,edge_attr):
     x = self.conv1(x, edge_index,edge_attr)
@@ -36,7 +38,7 @@ class GNN(torch.nn.Module):
 
   def train_epoch(self,loader,optim,criterion,device):
     self.train()
-    losses = []
+    epoch_losses = []
     for batch in loader:
       batch = batch.to(device)
       optim.zero_grad()
@@ -55,10 +57,12 @@ class GNN(torch.nn.Module):
       # loss = mse_loss
       loss.backward()
       optim.step()
-      losses.append(mse_loss.item())
-    return np.array(losses).mean()
+      epoch_losses.append(mse_loss.item())
+    epoch_mean_loss = np.array(epoch_losses).mean()
+    self.train_losses.append(epoch_mean_loss)
+    return epoch_mean_loss
 
-  def eval_model(self,loader,device,epoch=-1,print_predictions=False, val=False):
+  def eval_model(self,loader,device,epoch=-1, save_best = False):
     self.eval()
     mses = []
     l1s = []
@@ -66,15 +70,13 @@ class GNN(torch.nn.Module):
       batch = batch.to(device)
       out = self(batch.x.float(),batch.edge_index,batch.batch,batch.edge_attr.float())
       target = batch.y.T[self.target].unsqueeze(1)
-      if print_predictions:
-        print(f'Predictions:\n {out.cpu().detach().numpy()} \n Ground truth:\n {target.cpu().detach().numpy()}')
       mses.append(F.mse_loss(out,target).item())
       l1s.append(F.l1_loss(out,target).item())
 
     e_mse, e_l1 = np.array(mses).mean(), np.array(l1s).mean()
-
+    self.eval_losses.append(e_mse)
     # and abs(t_e_loss - v_e_mse) < 5
-    if val == True and e_mse < self.best_val_mse :
+    if e_mse < self.best_val_mse :
       self.best_val_mse = e_mse
       self.best_epoch = epoch
       torch.save(self.state_dict(),f'./best_params_{self.target}')

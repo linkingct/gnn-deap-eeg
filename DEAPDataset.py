@@ -81,7 +81,8 @@ class DEAPDataset(InMemoryDataset):
   def processed_file_names(self):
       if not os.path.exists(self.processed_dir):
         os.makedirs(self.processed_dir)
-      return [f'deap_processed_graph.{self.participant_from}-{self.participant_to}.dataset']
+      file_name = f'{self.participant_from}-{self.participant_to}' if self.participant_from is not self.participant_to else f'{self.participant_from}'
+      return [f'deap_processed_graph.{file_name}.dataset']
 
   def process(self):
       # Number of nodes per graph
