@@ -1,16 +1,58 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
-from torch_geometric.nn import GraphConv
-from torch_geometric.nn import global_mean_pool
+from torch.nn import Sequential, ReLU, Linear, ModuleList, LayerNorm
+from torch_geometric.nn import GENConv, DeepGCNLayer
+from torch_geometric.nn import BatchNorm, global_mean_pool
+
+from ogb.graphproppred.mol_encoder import BondEncoder
+from einops import rearrange
+
+from models.pytorch_geometric.pna import PNAConvSimple
 
 class GNN(torch.nn.Module):
-  def __init__(self, input_dim,hidden_channels, target='valence'):
+  def __init__(self, input_dim,hidden_channels,num_layers=3, target='valence'):
     super(GNN, self).__init__()
-    self.conv1 = GraphConv(input_dim, hidden_channels)  
-    self.conv2 = GraphConv(hidden_channels, hidden_channels)
-    self.conv3 = GraphConv(hidden_channels, hidden_channels)
-    self.lin = torch.nn.Linear(hidden_channels, 1)
+    # self.conv1 = GATConv(input_dim, hidden_channels, heads=8, dropout=0.6) 
+    # self.conv2 = GATConv(hidden_channels * 8, hidden_channels, heads=8, dropout=0.6)
+    # self.conv3 = GATConv(hidden_channels * 8, hidden_channels, heads=8, dropout=0.6)
+    # self.lin = torch.nn.Linear(hidden_channels * 8, 1)
+
+
+    # self.node_emb = BondEncoder(emb_dim=70)
+
+    # aggregators = ['mean', 'min', 'max', 'std']
+    # scalers = ['identity', 'amplification', 'attenuation']
+
+    # self.convs = ModuleList()
+    # self.batch_norms = ModuleList()
+    # for _ in range(4):
+    #   conv = PNAConvSimple(in_channels=70, out_channels=70, aggregators=aggregators, scalers=scalers, deg=deg, post_layers=1)
+    #   self.convs.append(conv)
+    #   self.batch_norms.append(BatchNorm(70))
+
+    # 
+
+    # MODEL ARCHITECTURE
+    self.node_encoder = Linear(input_dim, hidden_channels)
+    self.edge_encoder = Linear(1, hidden_channels)
+    
+
+    self.layers = torch.nn.ModuleList()
+    for i in range(1, num_layers + 1):
+      conv = GENConv(hidden_channels, hidden_channels, aggr='softmax',
+                      t=1.0, learn_t=True, num_layers=2, norm='layer')
+      norm = LayerNorm(hidden_channels, elementwise_affine=True)
+      act = ReLU(inplace=False)
+
+      layer = DeepGCNLayer(conv, norm, act, block='res+', dropout=0.1,
+                            ckpt_grad=i % 3)
+      self.layers.append(layer)
+
+    self.mlp = Sequential(Linear(hidden_channels, hidden_channels//2), ReLU(), Linear(hidden_channels//2, hidden_channels//4), ReLU(), Linear(hidden_channels//4, 1))
+
+
+    # MODEL CLASS ATTRIBUTES
     self.target = {'valence':0,'arousal':1,'dominance':2,'liking':3}[target]
     self.best_val_mse = float('inf')
     self.best_epoch = 0
@@ -20,23 +62,50 @@ class GNN(torch.nn.Module):
     self.eval_patience_reached = False
 
   def forward(self, x, edge_index, batch,edge_attr):
-    x = self.conv1(x, edge_index,edge_attr)
+    x = self.node_encoder(x)
+    edge_attr = self.edge_encoder(edge_attr.unsqueeze(1))
+
+    x = self.layers[0].conv(x, edge_index, edge_attr)
+
+    for layer in self.layers[1:]:
+        x = layer(x, edge_index, edge_attr)
+    x = self.layers[0].act(self.layers[0].norm(x))
+    x = global_mean_pool(x, batch)
+    x = F.dropout(x, p=0.1, training=self.training)
+    x = self.mlp(x)
+    return x
+    # x = rearrange(x, 'b f -> f b')
+    # print(x.shape)
+    # x = self.node_emb(x)
+    # print(x.shape)
+    # for conv, batch_norm in zip(self.convs, self.batch_norms):
+    #       h = F.relu(batch_norm(conv(x, edge_index, edge_attr)))
+    #       x = h + x  # residual#
+    #       x = F.dropout(x, 0.3, training=self.training)
+    # x = global_mean_pool(x, batch)
+    # return self.mlp(x)
+    # x = F.dropout(x, p=0.6, training=self.training)
+    # x = self.conv1(x, edge_index)
+    # x = F.elu(self.conv1(x, edge_index))
+    # x = F.dropout(x, p=0.6, training=self.training)
+    # x = self.conv2(x, edge_index)
+    
     # Sigmoid and tanh work -> Relu doesnt -> Why?
-    x = torch.relu(x)
-    x = F.dropout(x, p=0.5, training=self.training)
-    # x = self.conv2(x, edge_index,edge_attr)
-    # x = torch.tanh(x)
-    # x = F.dropout(x, p=0.5, training=self.training)
-    x = self.conv3(x, edge_index,edge_attr)
+    # x = torch.relu(x)
+    # x = F.dropout(x, p=0.25, training=self.training)
+    # x = self.conv2(x, edge_index)
+    # x = torch.relu(x)
+    # x = F.dropout(x, p=0.25, training=self.training)
+    # x = self.conv3(x, edge_index)
 
     # Graph READOUT
-    x = global_mean_pool(x, batch)
+    # x = global_add_pool(x, batch)
   
-    x = F.dropout(x, p=0.5, training=self.training)
-    x = self.lin(x)
-    x = torch.relu(x)
+    # x = F.dropout(x, p=0.25, training=self.training)
+    # x = self.lin(x)
+    # x = torch.relu(x)
 
-    return x
+    # return x
 
   def train_epoch(self,loader,optim,criterion,device):
     if self.eval_patience_reached:
@@ -57,7 +126,7 @@ class GNN(torch.nn.Module):
         l1_regularization += (torch.norm(param, 1)**2).float()
         l2_regularization += (torch.norm(param, 2)**2).float()
 
-      loss = mse_loss + 0.05 * l1_regularization 
+      loss = mse_loss + 0.1 * l1_regularization + 0.01 * l2_regularization 
       # loss = mse_loss
       loss.backward()
       optim.step()
