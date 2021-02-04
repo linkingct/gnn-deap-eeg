@@ -18,7 +18,7 @@ dataset = DEAPDataset(root= ROOT_DIR, raw_dir= RAW_DIR, processed_dir=PROCESSED_
 
 _, _, test_set = train_val_test_split(dataset)
 
-test_loader = DataLoader(test_set, batch_size=8)
+test_loader = DataLoader(test_set, batch_size=32)
 
 in_channels = test_set[0].num_node_features
 
@@ -33,6 +33,7 @@ models = [GNN(in_channels,hidden_channels=64, target=target).to(device).eval() f
 for i in range(4):
   models[i].load_state_dict(torch.load(f'./best_params_{i}'))
 
+mses = []
 for batch in test_loader:
   batch = batch.to(device)
   predictions = [model(batch.x.float(),batch.edge_index,batch.batch,batch.edge_attr.float()) for model in models]
@@ -42,7 +43,10 @@ for batch in test_loader:
   print('-Ground truth-')
   print(batch.y.cpu().detach().numpy(),'\n')
 
-
-
+  mse = F.mse_loss(predictions,batch.y).item()
+  mses.append(mse)
   print(f'Mean average error: {F.l1_loss(predictions,batch.y).item()}')
-  print(f'Mean squared error: {F.mse_loss(predictions,batch.y).item()}')
+  print(f'Mean squared error: {mse}')
+
+print('----------------')
+print(f'MEAN SQUARED ERROR FOR TEST SET: {np.array(mses).mean()}')

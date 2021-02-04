@@ -4,14 +4,10 @@ import numpy as np
 from torch.nn import Sequential, ReLU, Linear, ModuleList, LayerNorm
 from torch_geometric.nn import GENConv, DeepGCNLayer
 from torch_geometric.nn import BatchNorm, global_mean_pool
-
-from ogb.graphproppred.mol_encoder import BondEncoder
 from einops import rearrange
 
-from models.pytorch_geometric.pna import PNAConvSimple
-
 class GNN(torch.nn.Module):
-  def __init__(self, input_dim,hidden_channels,num_layers=3, target='valence'):
+  def __init__(self, input_dim,hidden_channels,target,num_layers=2 ):
     super(GNN, self).__init__()
     # self.conv1 = GATConv(input_dim, hidden_channels, heads=8, dropout=0.6) 
     # self.conv2 = GATConv(hidden_channels * 8, hidden_channels, heads=8, dropout=0.6)
@@ -45,7 +41,7 @@ class GNN(torch.nn.Module):
       norm = LayerNorm(hidden_channels, elementwise_affine=True)
       act = ReLU(inplace=False)
 
-      layer = DeepGCNLayer(conv, norm, act, block='res+', dropout=0.1,
+      layer = DeepGCNLayer(conv, norm, act, block='res+', dropout=0.4,
                             ckpt_grad=i % 3)
       self.layers.append(layer)
 
@@ -66,12 +62,12 @@ class GNN(torch.nn.Module):
     edge_attr = self.edge_encoder(edge_attr.unsqueeze(1))
 
     x = self.layers[0].conv(x, edge_index, edge_attr)
-
+    x = F.dropout(x, p=0.25, training=self.training)
     for layer in self.layers[1:]:
         x = layer(x, edge_index, edge_attr)
     x = self.layers[0].act(self.layers[0].norm(x))
     x = global_mean_pool(x, batch)
-    x = F.dropout(x, p=0.1, training=self.training)
+    x = F.dropout(x, p=0.25, training=self.training)
     x = self.mlp(x)
     return x
     # x = rearrange(x, 'b f -> f b')

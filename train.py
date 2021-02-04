@@ -2,7 +2,6 @@
 
 import torch
 from torch_geometric.data import DataLoader
-from torch_geometric.utils import degree
 from DEAPDataset import DEAPDataset, train_val_test_split
 from GNNModel import GNN
 from matplotlib import pyplot as plt
@@ -11,18 +10,13 @@ ROOT_DIR = './'
 RAW_DIR = 'data/matlabPREPROCESSED'
 PROCESSED_DIR = 'data/graphProcessedData'
 
-dataset = DEAPDataset(root= ROOT_DIR, raw_dir= RAW_DIR, processed_dir=PROCESSED_DIR, participant_from=1, participant_to=1)
+dataset = DEAPDataset(root= ROOT_DIR, raw_dir= RAW_DIR, processed_dir=PROCESSED_DIR, participant_from=1, participant_to=4)
 
 train_set, val_set, _ = train_val_test_split(dataset)
 
-# Compute in-degree histogram over training data
-# deg = torch.zeros(10, dtype=torch.long)
-# for data in train_set:
-#     d = degree(data.edge_index[1], num_nodes=data.num_nodes, dtype=torch.long)
-#     deg += torch.bincount(d, minlength=deg.numel())
 
 BATCH_SIZE = 4
-train_loader = DataLoader(train_set, batch_size=BATCH_SIZE)
+train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
 val_loader = DataLoader(val_set, batch_size=BATCH_SIZE)
 
 MAX_EPOCH_N = 1000
