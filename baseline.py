@@ -9,7 +9,7 @@ ROOT_DIR = './'
 RAW_DIR = 'data/matlabPREPROCESSED'
 PROCESSED_DIR = 'data/graphProcessedData'
 
-dataset = DEAPDataset(root= ROOT_DIR, raw_dir= RAW_DIR, processed_dir=PROCESSED_DIR, participant_from=1, participant_to=10)
+dataset = DEAPDataset(root= ROOT_DIR, raw_dir= RAW_DIR, processed_dir=PROCESSED_DIR, participant_from=1, participant_to=1)
 
 train_set, val_set, test_set = train_val_test_split(dataset)
 train_set = train_set+val_set
