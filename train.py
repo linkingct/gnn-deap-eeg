@@ -2,7 +2,7 @@
 
 import torch
 from torch_geometric.data import DataLoader
-from DEAPDataset import DEAPDataset, train_val_test_split
+from DEAPDataset import DEAPDataset, train_val_test_split, plot_graph
 from GNNModel import GNN
 from matplotlib import pyplot as plt
 
@@ -13,6 +13,9 @@ PROCESSED_DIR = 'data/graphProcessedData'
 dataset = DEAPDataset(root= ROOT_DIR, raw_dir= RAW_DIR, processed_dir=PROCESSED_DIR, participant_from=1, participant_to=1)
 
 train_set, val_set, _ = train_val_test_split(dataset)
+
+# graph = train_set[0]
+# plot_graph(graph)
 
 
 BATCH_SIZE = 2

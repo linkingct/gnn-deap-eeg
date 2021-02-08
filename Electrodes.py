@@ -1,6 +1,7 @@
 import numpy as np
 import math as m
 from matplotlib import pyplot as plt
+from einops import rearrange
 
 '''
 32 channels 
@@ -22,7 +23,7 @@ class Electrodes:
     # Global connections will get a weight of -1 in the adj matrix
     self.global_connections = np.array([['Fp1','Fp2'],['AF3','AF4'],['F3','F4'],['FC5','FC6'],['T7','T8'],['CP5','CP6'],['P3','P4'],['PO3','PO4'],['O1','O2']])
     self.positions_2d = self.get_proyected_2d_positions()
-    self.adjacency_matrix = self.get_adjacency_matrix()
+    self.adjacency_matrix = self.get_adjacency_matrix(add_global_connections=True)
 
   # Helper function for get_proyected_2d_positions
   def azim_proj(self, pos):
@@ -67,26 +68,35 @@ class Electrodes:
     incX, incY, incZ = p1[0]-p2[0] , p1[1]-p2[1] , p1[2]-p2[2]
     return m.sqrt(incX**2 + incY**2 + incZ**2)
 
+  # get_adjacency_matrix is the main method for the Electrodes class. It returns a fixed adjacency matrix for the graph based on the 3-d coordinates of the electrodes
   # Symetrical, contains self-loops (learnable [?])
   # Calibration constant should keep 20% of the links acording to the paper
   def get_adjacency_matrix(self, calibration_constant = 6, active_threshold = 0.1, add_global_connections = False):
-    # Adjacency matrix
-    # Added self-loops
-    adj_mat = np.identity(len(self.channel_names))
-    for i, name1 in enumerate(self.channel_names):
-      for j, name2 in enumerate(self.channel_names):
-        if name1 != name2:
-          if add_global_connections:
-            # Global connection
-            global_connection = False
-            for glob_con in self.global_connections:
-              if (glob_con[0] ==  name1 and glob_con[1] == name2) or (glob_con[0] ==  name2 and glob_con[1] == name1):
-                global_connection = True
-                adj_mat[j][i] = -1
-          if add_global_connections == False or not global_connection:
-            # Local connection
-            link_weight = (calibration_constant / self.get_3d_distance(name1,name2))
-            link_weight = link_weight if link_weight > active_threshold else 0
-            adj_mat[j][i] = min(1,link_weight)
+    # Expand 3d position vector to a 32*32 matrix
+    distance_3d_matrix = np.array([self.positions_3d,]*len(self.positions_3d))
+    # Transpose
+    distance_3d_matrix = rearrange(distance_3d_matrix,'h w d -> w h d')
+    # Calculate 3d distances (m.sqrt(incX**2 + incY**2 + incZ**2))
+    distance_3d_matrix = distance_3d_matrix - self.positions_3d
+    distance_3d_matrix = distance_3d_matrix**2
+    distance_3d_matrix = distance_3d_matrix.sum(axis=-1)
+    distance_3d_matrix = np.sqrt(distance_3d_matrix)
+    # Define local connections
+    distance_3d_matrix = calibration_constant/distance_3d_matrix
+    local_conn_mask = distance_3d_matrix > active_threshold
+    local_connections = distance_3d_matrix * local_conn_mask
+    # Min max normalize connections and initialice adjacency_matrix
+    np.fill_diagonal(local_connections,0)
+    adj_matrix = (local_connections-local_connections.min()) / (local_connections.max() - local_connections.min())
+    # Add self-loops
+    np.fill_diagonal(adj_matrix,1)
+    # Global connections get initialised to -1
+    if add_global_connections:
+      global_indices = [[np.where(self.channel_names == e[0])[0],np.where(self.channel_names == e[1])[0]] for e in self.global_connections]
+      global_indices = np.array(global_indices).squeeze()
+      # Set symetric global connections
+      adj_matrix[global_indices[:,0],global_indices[:,1]] = 1
+      adj_matrix[global_indices[:,1],global_indices[:,0]] = 1
 
-    return adj_mat
+    return adj_matrix # adj_matrix = local connections + self-loops + (optional) global connections
+    

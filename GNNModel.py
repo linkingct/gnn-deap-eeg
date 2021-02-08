@@ -11,8 +11,8 @@ class GNN(torch.nn.Module):
   def __init__(self, input_dim,hidden_channels,target,num_layers=2 ):
     super(GNN, self).__init__()
 
-    self.conv1 = GraphConv(in_channels=input_dim, out_channels=hidden_channels, aggr='add')
-    self.conv2 = GraphConv(in_channels=hidden_channels, out_channels=hidden_channels, aggr='add')
+    self.conv1 = GraphConv(in_channels=input_dim, out_channels=hidden_channels*2, aggr='add')
+    self.conv2 = GraphConv(in_channels=hidden_channels*2, out_channels=hidden_channels, aggr='add')
     self.conv3 = GraphConv(in_channels=hidden_channels, out_channels=hidden_channels//2, aggr='add')
 
 
@@ -96,7 +96,7 @@ class GNN(torch.nn.Module):
 
     x = torch.tanh(self.conv1(x, edge_index, edge_attr))
     x = torch.tanh(self.conv2(x, edge_index, edge_attr))
-    # x = F.dropout(x, p=0.25, training=self.training)
+    x = F.dropout(x, p=0.25, training=self.training)
     x = torch.tanh(self.conv3(x, edge_index, edge_attr))
 
     # Graph READOUT
@@ -220,7 +220,7 @@ class GNN(torch.nn.Module):
         self.best_val_mse = e_mse
         self.best_epoch = epoch
         torch.save(self.state_dict(),f'./best_params_{self.target}')
-        self.eval_best_count = 0
+        self.eval_patience_count = 0
       # Early stopping
       elif early_stopping_patience is not None:
           self.eval_patience_count += 1
