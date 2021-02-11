@@ -82,7 +82,8 @@ class Electrodes:
     distance_3d_matrix = distance_3d_matrix.sum(axis=-1)
     distance_3d_matrix = np.sqrt(distance_3d_matrix)
     # Define local connections
-    distance_3d_matrix = calibration_constant/distance_3d_matrix
+    distance_3d_matrix[distance_3d_matrix != 0] = (calibration_constant / distance_3d_matrix[distance_3d_matrix != 0])
+  
     local_conn_mask = distance_3d_matrix > active_threshold
     local_connections = distance_3d_matrix * local_conn_mask
     # Min max normalize connections and initialice adjacency_matrix
