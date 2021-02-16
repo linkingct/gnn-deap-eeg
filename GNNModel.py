@@ -36,9 +36,13 @@ class GNN(torch.nn.Module):
     self.eval_patience_count = 0
     self.eval_patience_reached = False
 
-  def forward(self, x, edge_index, batch, edge_attr):
+  def forward(self, batch):
+    x = batch.x.float()
+    edge_index = batch.edge_index
+    edge_attr = batch.edge_attr.float()
+    # batch.x.float(),batch.edge_index,batch.batch,batch.edge_attr.float()
     # visualize_window(x)
-    bs = len(torch.unique(batch))
+    bs = len(torch.unique(batch.batch))
     
     # GRAPH CONVOLUTIONS (SPATIAL)
     x = rearrange(x,'w bs c ->(w bs) c')
@@ -63,62 +67,3 @@ class GNN(torch.nn.Module):
     x = self.mlp(x)
 
     return x
-    
- 
-  def train_epoch(self,loader,optim,criterion,device):
-    if self.eval_patience_reached:
-      return -1
-    self.train()
-    epoch_losses = []
-    for batch in loader:
-      batch = batch.to(device)
-      optim.zero_grad()
-      out = self(batch.x.float(),batch.edge_index,batch.batch,batch.edge_attr.float())
-      # Gets first label for every graph
-      target = batch.y.T[self.target].unsqueeze(1)
-      mse_loss = criterion(out, target)
-
-      # REGULARIZATION
-      l1_regularization, l2_regularization = torch.tensor(0, dtype=torch.float).to(device), torch.tensor(0, dtype=torch.float).to(device)
-      for param in self.parameters():
-        l1_regularization += (torch.norm(param, 1)**2).float()
-        l2_regularization += (torch.norm(param, 2)**2).float()
-
-      loss = mse_loss 
-      # loss = mse_loss
-      loss.backward()
-      optim.step()
-      epoch_losses.append(mse_loss.item())
-    epoch_mean_loss = np.array(epoch_losses).mean()
-    self.train_losses.append(epoch_mean_loss)
-    return epoch_mean_loss
-
-  def eval_model(self,loader,device,epoch=-1, model_is_training = False, early_stopping_patience = None):
-    if self.eval_patience_reached and model_is_training:
-      return -1,-1
-    self.eval()
-    mses = []
-    l1s = []
-    for batch in loader:
-      batch = batch.to(device)
-      out = self(batch.x.float(),batch.edge_index,batch.batch,batch.edge_attr.float())
-      target = batch.y.T[self.target].unsqueeze(1)
-      mses.append(F.mse_loss(out,target).item())
-      l1s.append(F.l1_loss(out,target).item())
-    e_mse, e_l1 = np.array(mses).mean(), np.array(l1s).mean()
-
-    if model_is_training:
-      self.eval_losses.append(e_mse)
-      # Save current best model locally
-      if e_mse < self.best_val_mse:
-        self.best_val_mse = e_mse
-        self.best_epoch = epoch
-        torch.save(self.state_dict(),f'./best_params_{self.target}')
-        self.eval_patience_count = 0
-      # Early stopping
-      elif early_stopping_patience is not None:
-          self.eval_patience_count += 1
-          if self.eval_patience_count >= early_stopping_patience:
-            self.eval_patience_reached = True
-
-    return e_mse, e_l1
