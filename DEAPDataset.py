@@ -3,9 +3,13 @@ import torch
 import scipy
 import numpy as np
 import itertools
+import matplotlib
+import matplotlib.pyplot as plt
+import mne
 from torch_geometric.data import InMemoryDataset, Data, DataLoader
 from tqdm import tqdm
 from Electrodes import Electrodes
+from einops import rearrange
 
 
 # Get 30 videos for each participant for test, 5 for validation and 5 for testing
@@ -33,6 +37,21 @@ def plot_graph(graph_data):
     nx.draw(graph, cmap=plt.get_cmap('Set1'),node_size=75,linewidths=6)
     plt.show()
 
+def visualize_window(window):
+  window = window.cpu().detach().numpy()[:12]
+
+  eeg_mean = window.mean(axis=-1)
+  chunks = eeg_mean.T
+  electrodes = Electrodes()
+  # Show all chunks and label (12)
+  fig, axes = plt.subplots(nrows=3, ncols=4, figsize=(30,20), gridspec_kw = {'wspace':0, 'hspace':0.2})
+  for i,chunk in enumerate(eeg_mean):
+      index = np.unravel_index(i, (3,4))
+      ax = axes[index[0]][index[1]]
+      ax.title.set_text(f'Chunk number {i} (seconds {5.25*i} to {5.25*(i+1)})')
+      im,_ = mne.viz.topomap.plot_topomap(chunk,electrodes.positions_2d,names=electrodes.channel_names,show_names=True,axes=ax,cmap='YlOrRd',show=False)
+  plt.show()
+
 def describe_graph(graph_data):
   print(data)
   print('==============================================================')
@@ -49,7 +68,7 @@ class DEAPDataset(InMemoryDataset):
   # 1 participant per dataset
   # Theoretically it doesn't make sense to train for all participants -> unless aiming for subject-independent classification (not atm)
   # PyG represents graphs sparsely, which refers to only holding the coordinates/values for which entries in  A  are non-zero.
-  def __init__(self, root, raw_dir,processed_dir,participant_from,participant_to=None, include_edge_attr=True, undirected_graphs = True, transform=None, pre_transform=None):
+  def __init__(self, root, raw_dir,processed_dir,participant_from,participant_to=None, include_edge_attr=True, undirected_graphs = True, transform=None, pre_transform=None, window_size=None):
       self._raw_dir = raw_dir
       self._processed_dir = processed_dir
       self.participant_from = participant_from
@@ -60,6 +79,8 @@ class DEAPDataset(InMemoryDataset):
       self.undirected_graphs = undirected_graphs
       # Instantiate class to handle electrode positions
       self.electrodes = Electrodes()
+      # Define the size of the windows -> 672: 12, 5.25 second windows
+      self.window_size = window_size
       super(DEAPDataset, self).__init__(root, transform, pre_transform)
       self.data, self.slices = torch.load(self.processed_paths[0])
 
@@ -88,6 +109,10 @@ class DEAPDataset(InMemoryDataset):
       # Number of nodes per graph
       n_nodes = len(self.electrodes.channel_names)
 
+      NODE_FEATURE_N = 8064
+      if NODE_FEATURE_N % self.window_size != 0:
+        raise 'Error, window number of features should be divisible by window size' 
+
       if self.undirected_graphs:
         source_nodes, target_nodes = np.repeat(np.arange(0,n_nodes),n_nodes), np.tile(np.arange(0,n_nodes),n_nodes)
       else:
@@ -110,11 +135,16 @@ class DEAPDataset(InMemoryDataset):
         participant_data = scipy.io.loadmat(f'{self.raw_dir}/{raw_name}')
         signal_data = torch.LongTensor(participant_data['data'][:,:32,:])
         labels = torch.Tensor(participant_data['labels'])
-        # Enumerate videos / graphs -> 1 graph per video
+        # Create time windows
+        if self.window_size != None:
+          signal_data = rearrange(signal_data,'v c (s w) -> v s c w',w = self.window_size)
+        # Enumerate videos / graphs -> 
         for index_video,node_features in enumerate(signal_data):
           # Create graph
           y = torch.FloatTensor(labels[index_video]).unsqueeze(0)
+          # 1 graph per window (12 per video with window size 672)
           data = Data(x=node_features,edge_attr=edge_attr,edge_index=edge_index, y=y) if self.include_edge_attr else Data(x=node_features, edge_index=edge_index, y=y)
           data_list.append(data)   
+            
       data, slices = self.collate(data_list)
       torch.save((data, slices), self.processed_paths[0])

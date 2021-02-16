@@ -10,16 +10,15 @@ ROOT_DIR = './'
 RAW_DIR = 'data/matlabPREPROCESSED'
 PROCESSED_DIR = 'data/graphProcessedData'
 
-dataset = DEAPDataset(root= ROOT_DIR, raw_dir= RAW_DIR, processed_dir=PROCESSED_DIR, participant_from=1, participant_to=10)
+dataset = DEAPDataset(root= ROOT_DIR, raw_dir= RAW_DIR, processed_dir=PROCESSED_DIR, participant_from=1, participant_to=32, window_size=672)
 
 train_set, val_set, _ = train_val_test_split(dataset)
 
-# graph = train_set[0]
-# plot_graph(graph)
+graph = train_set[0]
 
 
 BATCH_SIZE = 2
-train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
+train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=False)
 val_loader = DataLoader(val_set, batch_size=BATCH_SIZE)
 
 MAX_EPOCH_N = 1000
