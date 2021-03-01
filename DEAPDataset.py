@@ -49,20 +49,29 @@ def visualize_window(window):
       index = np.unravel_index(i, (3,4))
       ax = axes[index[0]][index[1]]
       ax.title.set_text(f'Chunk number {i} (seconds {5.25*i} to {5.25*(i+1)})')
-      im,_ = mne.viz.topomap.plot_topomap(chunk,electrodes.positions_2d,names=electrodes.channel_names,show_names=True,axes=ax,cmap='YlOrRd',show=False)
+      im,_ = mne.viz.topomap.plot_topomap(chunk,electrodes.positions_2d,names=electrodes.channel_names,show_names=True,axes=ax,cmap='bwr ',show=False)
+  plt.show()
+
+def visualize_graph(graph_features):
+  print(graph_features.shape)
+  electrodes = Electrodes()
+  eeg_mean = graph_features.cpu().detach().numpy().mean(axis=-1)
+  # Show video as 1 chunk
+  fig, ax = plt.subplots()
+  im,_ = mne.viz.topomap.plot_topomap(eeg_mean,electrodes.positions_2d,names=electrodes.channel_names,show_names=True,axes=ax,cmap='bwr',show=False)
   plt.show()
 
 def describe_graph(graph_data):
-  print(data)
+  print(graph_data)
   print('==============================================================')
 
   # Gather some statistics about the graph.
-  print(f'Number of nodes: {data.num_nodes}')
-  print(f'Number of edges: {data.num_edges}')
-  print(f'Average node degree: {data.num_edges / data.num_nodes:.2f}')
-  print(f'Contains isolated nodes: {data.contains_isolated_nodes()}')
-  print(f'Contains self-loops: {data.contains_self_loops()}')
-  print(f'Is undirected: {data.is_undirected()}')
+  print(f'Number of nodes: {graph_data.num_nodes}')
+  print(f'Number of edges: {graph_data.num_edges}')
+  print(f'Average node degree: {graph_data.num_edges / graph_data.num_nodes:.2f}')
+  print(f'Contains isolated nodes: {graph_data.contains_isolated_nodes()}')
+  print(f'Contains self-loops: {graph_data.contains_self_loops()}')
+  print(f'Is undirected: {graph_data.is_undirected()}')
 
 class DEAPDataset(InMemoryDataset):
   # 1 participant per dataset
@@ -110,20 +119,21 @@ class DEAPDataset(InMemoryDataset):
       n_nodes = len(self.electrodes.channel_names)
 
       NODE_FEATURE_N = 8064
-      if NODE_FEATURE_N % self.window_size != 0:
+      if self.window_size is not None and NODE_FEATURE_N % self.window_size != 0:
         raise 'Error, window number of features should be divisible by window size' 
 
       if self.undirected_graphs:
         source_nodes, target_nodes = np.repeat(np.arange(0,n_nodes),n_nodes), np.tile(np.arange(0,n_nodes),n_nodes)
       else:
         source_nodes, target_nodes = np.tril_indices(n_nodes,n_nodes)
+      
       edge_attr = self.electrodes.adjacency_matrix[source_nodes,target_nodes]
       
       # Remove zero weight links
       mask = np.ma.masked_not_equal(edge_attr, 0).mask
       edge_attr,source_nodes,target_nodes = edge_attr[mask], source_nodes[mask], target_nodes[mask]
 
-      edge_attr, edge_index = torch.tensor(edge_attr), torch.tensor([source_nodes,target_nodes], dtype=torch.long)
+      edge_attr, edge_index = torch.FloatTensor(edge_attr), torch.tensor([source_nodes,target_nodes], dtype=torch.long)
 
       # List of graphs that will be written to file
       data_list = []
@@ -133,7 +143,7 @@ class DEAPDataset(InMemoryDataset):
         pbar.set_description(raw_name)
         # Load raw file as np array
         participant_data = scipy.io.loadmat(f'{self.raw_dir}/{raw_name}')
-        signal_data = torch.LongTensor(participant_data['data'][:,:32,:])
+        signal_data = torch.FloatTensor(participant_data['data'][:,:32,:])
         labels = torch.Tensor(participant_data['labels'])
         # Create time windows
         if self.window_size != None:
